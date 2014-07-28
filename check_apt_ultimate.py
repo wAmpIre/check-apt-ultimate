@@ -1,0 +1,202 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+import optparse, re, sys
+
+try:
+	import apt
+except ImportError:
+	print 'Unable to import Python APT module, please "apt-get install python-apt"!'
+	sys.exit(3)
+
+from pprint import pprint
+
+# Define some constants
+OK=0
+WARN=1
+CRIT=2
+UNKNOWN=3
+RETURNMSG=['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
+
+
+# Command line options
+parser = optparse.OptionParser()
+
+parser.add_option('-d', '--dist-upgrade', action='store_true', dest='dist_upgrade', help='Use "dist-upgrade", otherwise "upgrade"')
+parser.add_option('-c', '--critial', dest='critical', metavar='\'-[sS]ecurity\'', help='RegEx for label, which are critical updates')
+parser.add_option('', '--keep', dest='pkgskeep', metavar='OK', help='Packages to keep > 0 is OK (default), WARNING or CRITICAL')
+parser.add_option('', '--delete', dest='pkgsdelete', metavar='OK', help='Packages to delete > 0 is OK (default), WARNING or CRITICAL')
+parser.add_option('', '--broken', dest='pkgsbroken', metavar='OK', help='Packages which are broken > 0 is OK (default), WARNING or CRITICAL')
+parser.add_option('-v', '--verbose', action='count', dest='verb', help='Verbose output')
+
+parser.set_defaults(dist_upgrade=False)
+parser.set_defaults(critical='-[sS]ecurity')
+parser.set_defaults(pkgskeep='OK')
+parser.set_defaults(pkgsdelete='OK')
+parser.set_defaults(pkgsbroken='OK')
+parser.set_defaults(verb=0)
+
+(opts, args) = parser.parse_args()
+
+# Test options
+if not opts.pkgskeep.upper() in RETURNMSG:
+	print 'Unknown argument for --keep!'
+	sys.exit(3)
+else:
+	opts.pkgskeep = RETURNMSG.index( opts.pkgskeep.upper() )
+
+if not opts.pkgsdelete.upper() in RETURNMSG:
+	print 'Unknown argument for --delete!'
+	sys.exit(3)
+else:
+	opts.pkgsdelete = RETURNMSG.index( opts.pkgsdelete.upper() )
+
+if not opts.pkgsbroken.upper() in RETURNMSG:
+	print 'Unknown argument for --broken!'
+	sys.exit(3)
+else:
+	opts.pkgsbroken = RETURNMSG.index( opts.pkgsbroken.upper() )
+
+
+re_crit = [ re.compile(l) for l in [opts.critical,] ]
+
+# Now go for the update...
+cache = apt.Cache(memonly=True)
+cache.upgrade(dist_upgrade=opts.dist_upgrade)
+
+
+# Get APT's point of view
+pkgs_tobechanged = cache.get_changes()
+if opts.verb >=1:
+	print '>>> V1: APT wants to %supgrade %s packages' % ( opts.dist_upgrade and 'dist-' or '' ,len(pkgs_tobechanged) ) 
+if opts.verb >=2:
+	print '>>> V2: APT\'s upgrade: %s' % ', '.join([p.name for p in pkgs_tobechanged])
+
+# Walk over all packages, find (new versions of installed packages) or (candidates marked for install)
+pkgs_notuptodate = [p for p in cache if (p.installed and p.installed.version != p.candidate.version) or (p.candidate and p.candidate.package.marked_install)]
+if opts.verb >=1:
+	print '>>> V1: Cache has %s updated and new installed packages' % ( len(pkgs_notuptodate) ) 
+if opts.verb >=2:
+	print '>>> V2: Upgrade: %s' % ', '.join([p.name for p in pkgs_notuptodate])
+
+# Prepare lists - fill new installs directly
+u_warn = []
+u_crit = []
+u_unknown_and_new = []
+u_unknown = []
+
+u_keep = []
+u_new = [p.name for p in cache if p.candidate and p.candidate.package.marked_install]
+
+# Walk over APT's changes, look for candidates of installed packages and put it in u_warn/u_crit - depends on Origin-Label
+# u_unknown_and_new includes new packages, clean up later
+if opts.verb >=1:
+	print '>>> V1: Have a look at changed packages'
+for pkg in pkgs_tobechanged:
+	state = None
+	if pkg.installed and pkg.candidate:
+		state = OK
+		for pc_origin in pkg.candidate.origins:
+			for rem in re_crit:
+				if rem.search(pc_origin.label):
+					state = max(state, CRIT)
+				else:
+					state = max(state, WARN)
+			
+	if state == CRIT:
+		u_crit.append(pkg)
+	elif state == WARN:
+		u_warn.append(pkg)
+	else:
+		u_unknown_and_new.append(pkg)
+
+	if opts.verb >=3:
+		print '>>> V3: Pkg "%s", installed: %s, candidate: %s, state: %s' % (pkg.name, pkg.installed and pkg.installed.version, pkg.candidate and pkg.candidate.version, state )
+
+# Packages which are not uptodate but APT will not upgrade are "kept"
+for pkg in pkgs_notuptodate:
+	if not pkg in pkgs_tobechanged:
+		u_keep.append(pkg)
+if opts.verb >=1:
+	print '>>> V1: %s packages to keep' % ( len(u_keep) ) 
+if opts.verb >=2 and len(u_keep):
+	print '>>> V2: Keep: %s' % ', '.join([p.name for p in u_keep])
+
+# Clean up unknown/new packages
+for pkg in u_unknown_and_new:
+	if not pkg.name in u_new:	
+		u_unknown.append(pkg)
+if opts.verb >=1:
+	print '>>> V1: %s packages unknown' % ( len(u_unknown) ) 
+if opts.verb >=2 and len(u_unknown):
+	print '>>> V2: Unknown: %s' % ', '.join([p.name for p in u_unknown])
+
+
+
+# And now for return message and code
+retcode=OK
+msg=[]
+longmsg=[]
+
+if len(u_unknown):
+	retcode=WARN
+	msg.insert(0, 'no information available: %s' % len(u_unknown) )
+	pkgs = [p.name for p in u_unknown]
+	pkgs.sort()
+	longmsg.insert(0, 'No information available (%s): %s' % (len(u_unknown), ', '.join(pkgs) ) )
+
+if len(u_keep):
+	msg.insert(0, 'kept packages: %s' % len(u_keep) )
+	pkgs = [p.name for p in u_keep]
+	pkgs.sort()
+	longmsg.append('Kept back (%s): %s' % (len(u_keep), ', '.join(pkgs) ) )
+
+if len(u_new):
+	# Already list of package names
+	#pkgs = [p.name for p in u_new]
+	#pkgs.sort()
+	msg.insert(0, 'new installs: %s' % len(u_new))
+	longmsg.append('New installs (%s): %s' % (len(u_new), ', '.join(u_new) ) )
+
+if len(u_warn):
+	retcode=WARN
+	msg.insert(0, 'other updates: %s' % len(u_warn) )
+	pkgs = [p.name for p in u_warn]
+	pkgs.sort()
+	longmsg.insert(0, 'Other updates (%s): %s' % (len(u_warn), ', '.join(pkgs) ) )
+
+if len(u_crit):
+	retcode=CRIT
+	msg.insert(0, 'security updates: %s' % len(u_crit) )
+	pkgs = [p.name for p in u_crit]
+	pkgs.sort()
+	longmsg.insert(0, 'Security updates (%s): %s' % (len(u_crit), ', '.join(pkgs) ) )
+
+if retcode == OK:
+	msg = 'No updates to install'
+else:
+	msg = ', '.join(msg)
+	msg = msg[0].upper() + msg[1:]
+
+longmsg = '\n'.join(longmsg)
+
+# And now for something copletly... hidden... at least ATM...
+msg += ' - delete: %s, broken: %s' % (cache.delete_count, cache.broken_count, )
+if len(u_keep):
+	retcode = max(retcode, opts.pkgskeep)
+if cache.delete_count:
+	retcode = max(retcode, opts.pkgsdelete)
+if cache.broken_count:
+	retcode = max(retcode, opts.pkgsbroken)
+
+
+perfdata = 'securityupdates=%s;;1;0; updates=%s;1;;0; new=%s;;;; keep=%s;;;; unknownupdates=%s;;;0; ' % ( len(u_crit), len(u_warn), len(u_new), len(u_keep), len(u_unknown), )
+perfdata += 'install=%s;;;; delete=%s;;;; broken=%s;;;;' % ( cache.install_count, cache.delete_count, cache.broken_count, )
+
+print 'APT %s - %s|%s' % (RETURNMSG[retcode], msg, perfdata, )
+if longmsg:
+	print longmsg
+sys.exit(retcode)
+
+# vim: se noexpandtab sw=8 ts=8 softtabstop=8
+
