@@ -86,7 +86,8 @@ u_unknown_and_new = []
 u_unknown = []
 
 u_keep = []
-u_new = [p.name for p in cache if p.candidate and p.candidate.package.marked_install]
+u_new = [p.name for p in cache.get_changes() if p.candidate and p.candidate.package.marked_install]
+u_delete = [p.name for p in cache.get_changes() if p.marked_delete]
 
 # Walk over APT's changes, look for candidates of installed packages and put it in u_warn/u_crit - depends on Origin-Label
 # u_unknown_and_new includes new packages, clean up later
@@ -149,14 +150,19 @@ if len(u_keep):
 	msg.insert(0, 'kept packages: %s' % len(u_keep) )
 	pkgs = [p.name for p in u_keep]
 	pkgs.sort()
-	longmsg.append('Kept back (%s): %s' % (len(u_keep), ', '.join(pkgs) ) )
+	longmsg.insert(0, 'Kept back (%s): %s' % (len(u_keep), ', '.join(pkgs) ) )
+
+if len(u_delete):
+	# Already list of package names
+	u_delete.sort()
+	msg.insert(0, 'delete: %s' % len(u_delete) )
+	longmsg.insert(0, 'Delete (%s): %s' % (len(u_delete), ', '.join(u_delete) ) )
 
 if len(u_new):
 	# Already list of package names
-	#pkgs = [p.name for p in u_new]
-	#pkgs.sort()
+	u_new.sort()
 	msg.insert(0, 'new installs: %s' % len(u_new))
-	longmsg.append('New installs (%s): %s' % (len(u_new), ', '.join(u_new) ) )
+	longmsg.insert(0, 'New installs (%s): %s' % (len(u_new), ', '.join(u_new) ) )
 
 if len(u_warn):
 	retcode=WARN
@@ -181,7 +187,7 @@ else:
 longmsg = '\n'.join(longmsg)
 
 # And now for something copletly... hidden... at least ATM...
-msg += ' - delete: %s, broken: %s' % (cache.delete_count, cache.broken_count, )
+msg += ' - broken: %s' % (cache.broken_count, )
 if len(u_keep):
 	retcode = max(retcode, opts.pkgskeep)
 if cache.delete_count:
