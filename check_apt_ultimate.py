@@ -146,6 +146,9 @@ if len(u_unknown):
 	pkgs.sort()
 	longmsg.insert(0, 'No information available (%s): %s' % (len(u_unknown), ', '.join(pkgs) ) )
 
+if cache.broken_count:
+	msg.insert(0, 'broken packages: %s' % cache.broken_count )
+
 if len(u_keep):
 	msg.insert(0, 'kept packages: %s' % len(u_keep) )
 	pkgs = [p.name for p in u_keep]
@@ -178,7 +181,7 @@ if len(u_crit):
 	pkgs.sort()
 	longmsg.insert(0, 'Security updates (%s): %s' % (len(u_crit), ', '.join(pkgs) ) )
 
-if retcode == OK:
+if retcode == OK and len(msg) == 0:
 	msg = 'No updates to install'
 else:
 	msg = ', '.join(msg)
@@ -186,8 +189,6 @@ else:
 
 longmsg = '\n'.join(longmsg)
 
-# And now for something copletly... hidden... at least ATM...
-msg += ' - broken: %s' % (cache.broken_count, )
 if len(u_keep):
 	retcode = max(retcode, opts.pkgskeep)
 if cache.delete_count:
