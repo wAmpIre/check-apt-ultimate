@@ -27,6 +27,7 @@ parser.add_option('-c', '--critial', dest='critical', metavar='\'-[sS]ecurity\''
 parser.add_option('', '--keep', dest='pkgskeep', metavar='OK', help='Packages to keep > 0 is OK (default), WARNING or CRITICAL')
 parser.add_option('', '--delete', dest='pkgsdelete', metavar='OK', help='Packages to delete > 0 is OK (default), WARNING or CRITICAL')
 parser.add_option('', '--broken', dest='pkgsbroken', metavar='OK', help='Packages which are broken > 0 is OK (default), WARNING or CRITICAL')
+parser.add_option('', '--showmaxpkgs', dest='showmaxpkgs', type=int, metavar=10, help='Show this number of packages in short output')
 parser.add_option('-v', '--verbose', action='count', dest='verb', help='Verbose output')
 
 parser.set_defaults(dist_upgrade=False)
@@ -34,6 +35,7 @@ parser.set_defaults(critical='-[sS]ecurity')
 parser.set_defaults(pkgskeep='OK')
 parser.set_defaults(pkgsdelete='OK')
 parser.set_defaults(pkgsbroken='OK')
+parser.set_defaults(showmaxpkgs=10)
 parser.set_defaults(verb=0)
 
 (opts, args) = parser.parse_args()
@@ -169,16 +171,28 @@ if len(u_new):
 
 if len(u_warn):
 	retcode=WARN
-	msg.insert(0, 'other updates: %s' % len(u_warn) )
 	pkgs = [p.name for p in u_warn]
 	pkgs.sort()
+	pkglist = ''
+	if opts.showmaxpkgs:
+		pkglist = ', '.join(pkgs[0:10])
+		if len(pkgs) > opts.showmaxpkgs:
+			pkglist += ', ...'
+		pkglist = ' (%s)' % pkglist
+	msg.insert(0, 'other updates: %s%s' % (len(u_warn), pkglist) )
 	longmsg.insert(0, 'Other updates (%s): %s' % (len(u_warn), ', '.join(pkgs) ) )
 
 if len(u_crit):
 	retcode=CRIT
-	msg.insert(0, 'security updates: %s' % len(u_crit) )
 	pkgs = [p.name for p in u_crit]
 	pkgs.sort()
+	pkglist = ''
+	if opts.showmaxpkgs:
+		pkglist = ', '.join(pkgs[0:10])
+		if len(pkgs) > opts.showmaxpkgs:
+			pkglist += ', ...'
+		pkglist = ' (%s)' % pkglist
+	msg.insert(0, 'security updates: %s%s' % (len(u_crit), pkglist) )
 	longmsg.insert(0, 'Security updates (%s): %s' % (len(u_crit), ', '.join(pkgs) ) )
 
 if retcode == OK and len(msg) == 0:
