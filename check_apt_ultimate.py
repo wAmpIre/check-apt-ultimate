@@ -63,7 +63,13 @@ else:
 re_crit = [ re.compile(l) for l in [opts.critical,] ]
 
 # Now go for the update...
-cache = apt.Cache(memonly=True)
+try:
+	cache = apt.Cache(memonly=True)
+except SystemError, exc:
+	print 'APT UNKNOWN - SystemError'
+	print u'%s' % exc
+	sys.exit(3)
+
 cache.upgrade(dist_upgrade=opts.dist_upgrade)
 
 
