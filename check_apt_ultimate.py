@@ -28,6 +28,8 @@ parser.add_option('', '--keep', dest='pkgskeep', metavar='OK', help='Packages to
 parser.add_option('', '--delete', dest='pkgsdelete', metavar='OK', help='Packages to delete > 0 is OK (default), WARNING or CRITICAL')
 parser.add_option('', '--broken', dest='pkgsbroken', metavar='OK', help='Packages which are broken > 0 is OK (default), WARNING or CRITICAL')
 parser.add_option('', '--showmaxpkgs', dest='showmaxpkgs', type=int, metavar=10, help='Show this number of packages in short output')
+parser.add_option('', '--periodic-check', dest='periodic_check', action='store_true', help='Check if periodic check is enabled')
+parser.add_option('', '--periodic-max-days', dest='periodic_max_days', type=int, metavar=1, help='Maximum days before automatic updates')
 parser.add_option('-v', '--verbose', action='count', dest='verb', help='Verbose output')
 
 parser.set_defaults(dist_upgrade=False)
@@ -36,6 +38,8 @@ parser.set_defaults(pkgskeep='OK')
 parser.set_defaults(pkgsdelete='OK')
 parser.set_defaults(pkgsbroken='OK')
 parser.set_defaults(showmaxpkgs=10)
+parser.set_defaults(periodic_check=False)
+parser.set_defaults(periodic_max_days=1)
 parser.set_defaults(verb=0)
 
 (opts, args) = parser.parse_args()
@@ -200,6 +204,39 @@ if len(u_crit):
 		pkglist = ' (%s)' % pkglist
 	msg.insert(0, 'security updates: %s%s' % (len(u_crit), pkglist) )
 	longmsg.insert(0, 'Security updates (%s): %s' % (len(u_crit), ', '.join(pkgs) ) )
+
+
+# Periodic checks
+if opts.periodic_check:
+	import apt_pkg
+
+	apt_pkg.init()
+
+	if opts.verb >= 2:
+		print '>>> V2: APT::Periodic::Enable "%s"' % apt_pkg.config.get('APT::Periodic::Enable')
+		print '>>> V2: APT::Periodic::Update-Package-Lists "%s"' % apt_pkg.config.get('APT::Periodic::Update-Package-Lists')
+
+	if apt_pkg.config.has_key('APT::Periodic::Enable') and apt_pkg.config.get('APT::Periodic::Enable') == '0':
+		retcode = CRIT
+		msg.insert(0, 'periodic updates disabled')
+		longmsg.insert(0, 'Periodic update disabled via \'APT::Periodic::Enable "0";\'')
+	else:
+		if apt_pkg.config.has_key('APT::Periodic::Update-Package-Lists'):
+			days = apt_pkg.config.find_i('APT::Periodic::Update-Package-Lists')
+			if days == 0:
+				retcode = CRIT
+				msg.insert(0, 'periodic updates disabled')
+				longmsg.insert(0, 'Periodic update disabled via \'APT::Periodic::Update-Package-Lists "0";\' (or garbage)')
+			elif days > opts.periodic_max_days:
+				retcode = WARN
+				msg.insert(0, 'periodic updates interval too big')
+				longmsg.insert(0, 'Periodic update interval too big via \'APT::Periodic::Update-Package-Lists "%s";\'' % apt_pkg.config.get('APT::Periodic::Update-Package-Lists'))
+		else:
+			retcode = CRIT
+			msg.insert(0, 'periodic updates disabled')
+			longmsg.insert(0, 'Periodic update disabled, no \'APT::Periodic::Update-Package-Lists "X";\' found')
+
+
 
 if retcode == OK and len(msg) == 0:
 	msg = 'No updates to install'
