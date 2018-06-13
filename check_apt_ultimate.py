@@ -81,7 +81,7 @@ if opts.verb >=2:
 	print '>>> V2: APT\'s upgrade: %s' % ', '.join([p.name for p in pkgs_tobechanged])
 
 # Walk over all packages, find (new versions of installed packages) or (candidates marked for install)
-pkgs_notuptodate = [p for p in cache if (p.installed and p.installed.version != p.candidate.version) or (p.candidate and p.candidate.package.marked_install)]
+pkgs_notuptodate = [p for p in cache if (p.installed and p.candidate and p.installed.version != p.candidate.version) or (p.candidate and p.candidate.package.marked_install)]
 if opts.verb >=1:
 	print '>>> V1: Cache has %s updated and new installed packages' % ( len(pkgs_notuptodate) ) 
 if opts.verb >=2:
